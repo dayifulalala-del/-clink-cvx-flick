@@ -1,0 +1,13 @@
+{
+  "author" : "",
+  "enabled" : true,
+  "exclusiveResources" : [
+
+  ],
+  "icon" : "puzzlepiece",
+  "id" : "plugin-73BDD46B",
+  "name" : "随机色彩按键",
+  "source" : "import random\n\ndef initial():\n    return {\"colors\": {}}\n\ndef events(state):\n    return [\"key_down\", \"key_up\"]\n\ndef tint():\n    # 随机色相\n    # Saturation = 100%\n    # Value / Brightness = 100%\n    h = random.random() * 6\n    x = 1 - abs((h % 2) - 1)\n\n    if h < 1:\n        r, g, b = 1, x, 0\n    elif h < 2:\n        r, g, b = x, 1, 0\n    elif h < 3:\n        r, g, b = 0, 1, x\n    elif h < 4:\n        r, g, b = 0, x, 1\n    elif h < 5:\n        r, g, b = x, 0, 1\n    else:\n        r, g, b = 1, 0, x\n\n    r = int(r * 255)\n    g = int(g * 255)\n    b = int(b * 255)\n\n    return \"#{:02X}{:02X}{:02X}\".format(r, g, b)\n\ndef on_event(name, info, state):\n    key = info.get(\"key\")\n\n    if not key:\n        return state\n\n    colors = state[\"colors\"]\n\n    if name == \"key_down\":\n        # 每次按下随机一种纯亮色\n        colors[key] = tint()\n\n    elif name == \"key_up\":\n        # 松开后恢复键盘原本颜色\n        colors.pop(key, None)\n\n    return state\n\ndef key_art(state):\n    colors = state[\"colors\"]\n    out = {}\n\n    for key, key_color in colors.items():\n        out[key] = shape(\n            kind=\"rect\",\n            unit=\"key\",\n            x=0,\n            y=0,\n            width=1,\n            height=1,\n            corner=6,\n            fill=color(key_color, 1.0)\n        )\n\n    return out\n",
+  "summary" : "按下任意按键时，该键立即覆盖一层随机半透明颜色，下次按下再换新色。需在设置中授予按键数据（Typing）权限。",
+  "version" : "1.0"
+}
