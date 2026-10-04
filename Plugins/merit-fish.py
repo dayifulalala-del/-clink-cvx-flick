@@ -1,17 +1,20 @@
 # ---
 # name: 电子木鱼
 # icon: hand.tap
-# summary: 顶栏点一下功德+1，今日敲满 108 下还有圆满提示
-# version: 1.0
+# summary: 开启后按空格敲木鱼攒功德，空格条实时显示计数
+# version: 1.1
 # author: 奥寺美紀
 # ---
 
 # 电子木鱼 (Merit fish)
 #
-# 顶栏放一个木鱼按钮，点一下功德 +1，横幅冒一句佛系文案；
-# 今日敲满 108 下（一串佛珠）有圆满提示，偶尔还会「佛祖显灵」
-# 额外 +9。计数按天自动清零今日、累计不清零，都只存在本机。
-# 开了空格条显示时，空格上常驻「🪵 今日 X · 累计 Y」。
+# v1.1：不再点按钮——在设置里开启后，打字时每按一次空格
+# 就算敲一下木鱼（中文模式下选词落字也算），功德实时涨，
+# 空格条上常驻显示。今日敲满 108 的整数倍（一串佛珠）有
+# 圆满提示，偶尔还会「佛祖显灵」额外 +9。
+#
+# 计数防重复：一次落字可能同时触发空格键与候选落字两个
+# 钩子，0.3 秒内的重复触发只算一次。
 #
 # 注意：空格条同一时间只能被一个插件占用——与空格条仪表盘、
 # 空格条猜词不要同时开显示。
@@ -19,48 +22,40 @@
 import random
 import time
 
-LINES = [
-    "功德+1",
-    "心诚则灵",
-    "施主，放下手机……算了继续敲",
-    "烦恼-1",
-    "佛祖说：这个可以有",
-    "敲的不是木鱼，是寂寞",
-    "今日宜敲木鱼",
-    "心平气和，再来一下",
-    "功德无量，头发浓密",
-    "一敲解千愁",
-]
-
 def day_index():
     # 按北京时间算「今天」，与仪表盘的自然日对齐。
     return int((time.time() + 28800) / 86400)
 
 def initial():
-    return {"total": 0, "today": 0, "day": 0, "show": True}
+    return {"on": True, "show": True, "total": 0, "today": 0,
+            "day": 0, "last": 0.0}
 
 def settings(state):
     roll(state)
     return vstack([
-        text("在顶栏（Layout > Top bar）把「电子木鱼」按钮加上，点一下功德 +1。今日敲满 108 下有圆满提示，偶有佛祖显灵额外 +9。", size=13),
-        text("今日 " + str(state.get("today", 0)) + " 下 · 累计功德 " + str(state.get("total", 0)) + "，只存在这台设备上。", size=12, color="gray"),
+        toggle("敲木鱼（按空格计数）", state.get("on", True), action="on"),
         toggle("空格条显示功德", state.get("show", True), action="show"),
+        text("开启后，每按一次空格算敲一下（中文模式下点候选、空格落字都算），今日 " + str(state.get("today", 0)) + " 下 · 累计功德 " + str(state.get("total", 0)) + "，只存在这台设备上。敲满 108 的整数倍有圆满提示，偶有佛祖显灵额外 +9。", size=12, color="gray"),
         text("空格条同一时间只能给一个插件：与空格条仪表盘、空格条猜词不要同时开。", size=12, color="gray"),
         button("功德清零", "reset", style="destructive"),
     ])
 
-def bar_items(state):
-    return [bar_button("knock", "木鱼", icon="hand.tap")]
-
 def on_action(action, value, state):
-    if action == "knock":
-        knock(state)
+    if action == "on":
+        state["on"] = value
+        if value:
+            if state.get("show", True):
+                claim("spacebar.text")
+                show(state)
+        else:
+            release("spacebar.text")
+            space_text(None)
     elif action == "show":
         state["show"] = value
-        if value:
+        if value and state.get("on", True):
             claim("spacebar.text")
             show(state)
-        else:
+        elif not value:
             release("spacebar.text")
             space_text(None)
     elif action == "reset":
@@ -73,9 +68,18 @@ def on_action(action, value, state):
 
 def on_open(state):
     roll(state)
-    if state.get("show", True):
+    if state.get("on", True) and state.get("show", True):
         claim("spacebar.text")
         show(state)
+    return state
+
+def on_key(key, state):
+    if key == " ":
+        knock(state)
+    return state
+
+def on_suggestion(word, state):
+    knock(state)
     return state
 
 def roll(state):
@@ -85,24 +89,27 @@ def roll(state):
         state["today"] = 0
 
 def knock(state):
+    if not state.get("on", True):
+        return
+    now = time.time()
+    if now - state.get("last", 0.0) < 0.3:
+        return
+    state["last"] = now
     roll(state)
     bonus = 0
     if random.random() < 0.02:
         bonus = 9
     gain = 1 + bonus
-    state["today"] = state.get("today", 0) + gain
+    before = state.get("today", 0)
+    state["today"] = before + gain
     state["total"] = state.get("total", 0) + gain
-    today = state["today"]
-    if today % 108 == 0:
-        banner("📿 一串佛珠圆满！今日已敲 " + str(today) + " 下，功德无量")
+    if state["today"] // 108 > before // 108:
+        banner("📿 佛珠圆满！今日已敲 " + str(state["today"]) + " 下，功德无量")
     elif bonus:
-        banner("✨ 佛祖显灵！功德+10（今日 " + str(today) + "）")
-    else:
-        line = LINES[state["total"] % len(LINES)]
-        banner(line + " · 今日 " + str(today))
+        banner("✨ 佛祖显灵！功德+10（今日 " + str(state["today"]) + "）")
     show(state)
 
 def show(state):
-    if not state.get("show", True):
+    if not state.get("on", True) or not state.get("show", True):
         return
     space_text("🪵 今日 " + str(state.get("today", 0)) + " · 累计 " + str(state.get("total", 0)))
